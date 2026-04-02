@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db.models import Base, engine
 from api.routes import strains, coffeeshops, admin
+from mangum import Mangum  # <-- Vercel ASGI adapter
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)
@@ -27,7 +28,9 @@ app.include_router(strains.router)
 app.include_router(coffeeshops.router)
 app.include_router(admin.router)
 
-
 @app.get("/")
 def root():
     return {"service": "Amsterdam Strain Finder", "docs": "/docs"}
+
+# --- Vercel serverless function handler ---
+handler = Mangum(app)
