@@ -2,15 +2,17 @@
 FastAPI application for Amsterdam Strain Finder.
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db.models import Base, engine
+from db.models import Base, engine, DATABASE_URL
 from api.routes import strains, coffeeshops, admin
 from mangum import Mangum  # <-- Vercel ASGI adapter
 
-# Create all tables on startup
-Base.metadata.create_all(bind=engine)
+# Only auto-create tables for local dev; Vercel sets VERCEL=1 automatically
+if not os.environ.get("VERCEL"):
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Amsterdam Strain Finder", version="1.0.0")
 
@@ -31,6 +33,3 @@ app.include_router(admin.router)
 @app.get("/")
 def root():
     return {"service": "Amsterdam Strain Finder", "docs": "/docs"}
-
-# --- Vercel serverless function handler ---
-handler = Mangum(app)

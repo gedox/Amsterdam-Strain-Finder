@@ -1,2 +1,1 @@
-from .models import Base, engine
-Base.metadata.create_all(engine)
+from .models import Base, engine, SessionLocal
