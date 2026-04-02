@@ -25,6 +25,10 @@ from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
 DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///./dev.db")
 
+# Use pg8000 driver for PostgreSQL (pure Python, works on Vercel)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+
 engine = create_engine(
     DATABASE_URL,
     # Needed for SQLite so the same connection can be used across threads
