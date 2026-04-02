@@ -20,6 +20,11 @@ def search_strains(
     return crud.search_strains(db, q, category)
 
 
+@router.get("/all")
+def all_strains(db: Session = Depends(get_db)):
+    return crud.get_all_strains_grouped(db)
+
+
 @router.get("/popular")
 def popular_strains(db: Session = Depends(get_db)):
     return crud.get_popular_strains(db)

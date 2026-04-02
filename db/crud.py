@@ -273,6 +273,29 @@ def search_strains(session: Session, query: str, category: str = None) -> list[d
     return results
 
 
+def get_all_strains_grouped(session: Session) -> list[dict[str, Any]]:
+    """Return all unique strains with shop count, ordered alphabetically."""
+    rows = (
+        session.query(
+            Strain.name_normalized,
+            Strain.category,
+            func.count(func.distinct(Strain.coffeeshop_id)).label("shop_count"),
+        )
+        .group_by(Strain.name_normalized, Strain.category)
+        .order_by(Strain.name_normalized)
+        .all()
+    )
+
+    return [
+        {
+            "name_normalized": row.name_normalized,
+            "category": row.category,
+            "shop_count": row.shop_count,
+        }
+        for row in rows
+    ]
+
+
 def get_popular_strains(session: Session, limit: int = 20) -> list[dict[str, Any]]:
     """Return top strains by count of distinct shops carrying them."""
     rows = (
