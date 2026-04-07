@@ -10,6 +10,7 @@ import logging
 import time
 import os
 import re
+from datetime import datetime
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -141,13 +142,46 @@ def _extract_date_and_contributor(soup: BeautifulSoup) -> tuple[Optional[str], O
     return menu_date, contributor
 
 
+# Closed or rebranded shops — skip these entirely so they don't get re-added
+_SKIP_SLUGS = frozenset({
+    "andalucia", "ricks-cafe", "rickscafe", "terminator", "rockland",
+    "baba", "funky-munkey", "funkymunkey", "softland", "amsterdamned",
+})
+
+# Pattern to extract end date from index text like "59 menus: Dec.2003 to Mar.2026"
+_INDEX_END_DATE_RE = re.compile(
+    r"to\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\.\s]*(\d{4})",
+    re.IGNORECASE,
+)
+
+_MONTH_MAP = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+
+def _parse_index_end_date(anchor_text: str) -> Optional[datetime]:
+    """Parse the end date from index page text like '59 menus: Dec.2003 to Mar.2026'."""
+    m = _INDEX_END_DATE_RE.search(anchor_text)
+    if not m:
+        return None
+    month = _MONTH_MAP.get(m.group(1).lower()[:3])
+    year = int(m.group(2))
+    if month is None:
+        return None
+    return datetime(year, month, 1)
+
+
 # ---------------------------------------------------------------------------
 # Main scraper
 # ---------------------------------------------------------------------------
 
-def run_scraper() -> list[ScrapeJob]:
+def run_scraper(full: bool = False) -> list[ScrapeJob]:
     """
     Scrape coffeeshopmenus.org for Amsterdam coffeeshop menu images.
+
+    By default only visits shops whose latest menu date on the index page
+    is newer than the last scrape. Pass full=True to visit all shops.
 
     Returns a list of ScrapeJob instances — one per new menu image found.
     """
@@ -182,6 +216,18 @@ def run_scraper() -> list[ScrapeJob]:
         # Build list of Amsterdam shops to visit
         shops_to_visit: list[tuple[str, str, str]] = []  # (slug, name, href)
 
+        # Determine cutoff date for incremental mode
+        cutoff = None
+        if not full:
+            last_scrape = crud.get_status(session).get("last_scrape_at")
+            if last_scrape:
+                last_scrape_dt = datetime.fromisoformat(last_scrape)
+                cutoff = datetime(last_scrape_dt.year, last_scrape_dt.month, 1)
+                logger.info("Incremental mode: only scraping menus updated since %s",
+                            cutoff.strftime("%b %Y"))
+            else:
+                logger.info("No previous scrape found — running full scrape")
+
         for anchor in anchors:
             href = anchor["href"]
             full_text = anchor.get_text()
@@ -191,6 +237,19 @@ def run_scraper() -> list[ScrapeJob]:
             if "(closed)" in lowered or "(now a bar)" in lowered:
                 logger.debug("Skipping closed/bar entry: %s", full_text.strip())
                 continue
+
+            slug = _slug_from_href(href)
+
+            # Skip shops we've removed from the database
+            if slug in _SKIP_SLUGS:
+                logger.debug("Skipping closed/rebranded shop: %s", slug)
+                continue
+
+            # In incremental mode, skip shops not updated since last scrape
+            if cutoff is not None:
+                end_date = _parse_index_end_date(full_text)
+                if end_date is None or end_date < cutoff:
+                    continue
 
             # Extract shop name — try <strong> first, fall back to first text line
             strong_tag = anchor.find("strong")
@@ -207,11 +266,10 @@ def run_scraper() -> list[ScrapeJob]:
                     logger.debug("Skipping anchor with no name: %s", href)
                     continue
 
-            # ams_index.html is Amsterdam-only — no city filter needed
-            slug = _slug_from_href(href)
             shops_to_visit.append((slug, name, href))
 
-        logger.info("%d Amsterdam shops queued for scraping", len(shops_to_visit))
+        mode_label = "full" if full else "incremental"
+        logger.info("%d Amsterdam shops queued for scraping (%s)", len(shops_to_visit), mode_label)
 
         # ------------------------------------------------------------------
         # Step 5: Visit each shop page
@@ -293,7 +351,9 @@ def run_scraper() -> list[ScrapeJob]:
 
 
 if __name__ == "__main__":
+    import sys
     logging.basicConfig(level=logging.INFO)
-    jobs = run_scraper()
+    full_mode = "--full" in sys.argv
+    jobs = run_scraper(full=full_mode)
     for job in jobs:
         print(job)
