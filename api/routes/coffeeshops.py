@@ -16,6 +16,11 @@ def list_coffeeshops(db: Session = Depends(get_db)):
     return crud.get_all_shops(db)
 
 
+@router.get("/menus/recent")
+def recent_menus(days: int = 5, db: Session = Depends(get_db)):
+    return crud.get_recent_menus(db, days=days)
+
+
 @router.get("/coffeeshops/{slug}")
 def get_coffeeshop(slug: str, db: Session = Depends(get_db)):
     result = crud.get_shop_menu(db, slug)

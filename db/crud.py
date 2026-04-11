@@ -7,7 +7,7 @@ They never commit — callers are responsible for session lifecycle.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func
@@ -245,8 +245,9 @@ def search_strains(session: Session, query: str, category: str = None) -> list[d
     pattern = f"%{_normalize(query)}%"
 
     q = (
-        session.query(Strain, Coffeeshop)
+        session.query(Strain, Coffeeshop, MenuSnapshot)
         .join(Coffeeshop, Strain.coffeeshop_id == Coffeeshop.id)
+        .outerjoin(MenuSnapshot, Strain.snapshot_id == MenuSnapshot.id)
         .filter(Strain.name_normalized.like(pattern))
     )
 
@@ -256,7 +257,7 @@ def search_strains(session: Session, query: str, category: str = None) -> list[d
     rows = q.order_by(Strain.name_normalized, Coffeeshop.name).all()
 
     results = []
-    for strain, shop in rows:
+    for strain, shop, snapshot in rows:
         results.append(
             {
                 "strain_id":      strain.id,
@@ -268,6 +269,8 @@ def search_strains(session: Session, query: str, category: str = None) -> list[d
                 "shop_slug":      shop.slug,
                 "shop_name":      shop.name,
                 "shop_city":      shop.city,
+                "last_scraped_at": snapshot.scraped_at.isoformat() if snapshot and snapshot.scraped_at else None,
+                "menu_date":       snapshot.menu_date if snapshot else None,
             }
         )
     return results
@@ -427,6 +430,58 @@ def get_category_counts(session: Session) -> dict[str, int]:
     )
 
     return {row.category: row.cnt for row in rows}
+
+
+def get_recent_menus(session: Session, days: int = 5) -> dict[str, Any]:
+    """
+    Return shops whose active snapshot was scraped within the last `days`
+    days (anchored on the current time). Shops whose latest snapshot has
+    zero strains are excluded — those are almost always OCR failures, not
+    fresh data.
+    """
+    reference_time = datetime.utcnow()
+    window_start = reference_time - timedelta(days=days)
+
+    rows = (
+        session.query(MenuSnapshot, Coffeeshop)
+        .join(Coffeeshop, MenuSnapshot.coffeeshop_id == Coffeeshop.id)
+        .filter(
+            MenuSnapshot.is_active == True,
+            MenuSnapshot.scraped_at >= window_start,
+            MenuSnapshot.scraped_at <= reference_time,
+        )
+        .order_by(MenuSnapshot.scraped_at.desc())
+        .all()
+    )
+
+    menus = []
+    for snapshot, shop in rows:
+        strain_count = (
+            session.query(func.count(Strain.id))
+            .filter(Strain.snapshot_id == snapshot.id)
+            .scalar()
+            or 0
+        )
+        if strain_count == 0:
+            continue
+        menus.append(
+            {
+                "slug":           shop.slug,
+                "name":           shop.name,
+                "address":        shop.address,
+                "city":           shop.city,
+                "menu_date":      snapshot.menu_date,
+                "scraped_at":     snapshot.scraped_at.isoformat() if snapshot.scraped_at else None,
+                "strain_count":   strain_count,
+            }
+        )
+
+    return {
+        "reference_time": reference_time.isoformat(),
+        "window_start":   window_start.isoformat(),
+        "days":           days,
+        "menus":          menus,
+    }
 
 
 def get_status(session: Session) -> dict[str, Any]:
