@@ -36,7 +36,7 @@ Rules:
 - If the image is too blurry or illegible to parse, return an empty array: []
 """
 
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-6"
 
 
 def _call_claude(b64: str, media_type: str) -> str:

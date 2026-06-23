@@ -31,6 +31,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - Never delete rows from coffeeshops table
 - Always store raw Claude JSON in menu_snapshots.raw_json
 - Crawl delay: 1.5s between shop page requests
-- OCR model: claude-sonnet-4-20250514
+- OCR model: claude-sonnet-4-6
 - BeautifulSoup parser: html.parser (not lxml — old site HTML is non-standard)
 - Frontend design: match strain-finder-ui.jsx exactly, wire to real API
