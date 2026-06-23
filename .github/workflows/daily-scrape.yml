@@ -6,6 +6,10 @@ on:
     - cron: "0 10 * * *"
   workflow_dispatch: # Allow manual trigger
 
+permissions:
+  actions: write
+  contents: write
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -33,3 +37,11 @@ jobs:
           logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
           run_pipeline()
           "
+
+      - name: Keepalive (prevent 60-day auto-disable)
+        if: github.event_name == 'schedule'
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          # Re-commits when the latest commit is older than this, keeping the
+          # repo under GitHub's 60-day inactivity limit for scheduled workflows.
+          time_elapsed: "45"
